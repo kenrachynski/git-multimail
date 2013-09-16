@@ -83,15 +83,15 @@ ADDR_HEADERS = set(['from', 'to', 'cc', 'bcc', 'reply-to', 'sender'])
 
 
 REF_CREATED_SUBJECT_TEMPLATE = (
-    '%(emailprefix)s%(refname_type)s %(short_refname)s created'
+    '%(emailprefix)s:%(pusher)s:%(refname_type)s %(short_refname)s created'
     ' (now %(newrev_short)s)'
     )
 REF_UPDATED_SUBJECT_TEMPLATE = (
-    '%(emailprefix)s%(refname_type)s %(short_refname)s updated'
+    '%(emailprefix)s:%(pusher)s:%(refname_type)s %(short_refname)s updated'
     ' (%(oldrev_short)s -> %(newrev_short)s)'
     )
 REF_DELETED_SUBJECT_TEMPLATE = (
-    '%(emailprefix)s%(refname_type)s %(short_refname)s deleted'
+    '%(emailprefix)s:%(pusher)s:%(refname_type)s %(short_refname)s deleted'
     ' (was %(oldrev_short)s)'
     )
 
@@ -223,7 +223,7 @@ how to provide full information about this reference change.
 
 REVISION_HEADER_TEMPLATE = """\
 To: %(recipients)s
-Subject: %(emailprefix)s%(num)02d/%(tot)02d: %(oneline)s
+Subject: %(emailprefix)s:%(pusher)s:%(num)02d/%(tot)02d: %(oneline)s
 MIME-Version: 1.0
 Content-Type: text/plain; charset=%(charset)s
 Content-Transfer-Encoding: 8bit
