@@ -49,21 +49,25 @@ import sys
 import os
 import re
 import bisect
+import socket
 import subprocess
 import shlex
 import optparse
 import smtplib
+import time
 
 try:
     from email.utils import make_msgid
     from email.utils import getaddresses
     from email.utils import formataddr
+    from email.utils import formatdate
     from email.header import Header
 except ImportError:
     # Prior to Python 2.5, the email module used different names:
     from email.Utils import make_msgid
     from email.Utils import getaddresses
     from email.Utils import formataddr
+    from email.Utils import formatdate
     from email.Header import Header
 
 
@@ -96,6 +100,7 @@ REF_DELETED_SUBJECT_TEMPLATE = (
     )
 
 REFCHANGE_HEADER_TEMPLATE = """\
+Date: %(send_date)s
 To: %(recipients)s
 Subject: %(subject)s
 MIME-Version: 1.0
@@ -104,6 +109,7 @@ Content-Transfer-Encoding: 8bit
 Message-ID: %(msgid)s
 From: %(fromaddr)s
 Reply-To: %(reply_to)s
+X-Git-Host: %(fqdn)s
 X-Git-Repo: %(repo_shortname)s
 X-Git-Refname: %(refname)s
 X-Git-Reftype: %(refname_type)s
@@ -222,6 +228,7 @@ how to provide full information about this reference change.
 
 
 REVISION_HEADER_TEMPLATE = """\
+Date: %(send_date)s
 To: %(recipients)s
 Subject: %(emailprefix)s:%(pusher)s:%(num)02d/%(tot)02d: %(oneline)s
 MIME-Version: 1.0
@@ -231,6 +238,7 @@ From: %(fromaddr)s
 Reply-To: %(reply_to)s
 In-Reply-To: %(reply_to_msgid)s
 References: %(reply_to_msgid)s
+X-Git-Host: %(fqdn)s
 X-Git-Repo: %(repo_shortname)s
 X-Git-Refname: %(refname)s
 X-Git-Reftype: %(refname_type)s
@@ -672,15 +680,19 @@ class Change(object):
 
         raise NotImplementedError()
 
-    def generate_email(self, push, body_filter=None):
+    def generate_email(self, push, body_filter=None, extra_header_values={}):
         """Generate an email describing this change.
 
         Iterate over the lines (including the header lines) of an
         email describing this change.  If body_filter is not None,
         then use it to filter the lines that are intended for the
-        email body."""
+        email body.
 
-        for line in self.generate_email_header():
+        The extra_header_values field is received as a dict and not as
+        **kwargs, to allow passing other keyword arguments in the
+        future (e.g. passing extra values to generate_email_intro()"""
+
+        for line in self.generate_email_header(**extra_header_values):
             yield line
         yield '\n'
         for line in self.generate_email_intro():
@@ -736,8 +748,10 @@ class Revision(Change):
 
         return values
 
-    def generate_email_header(self):
-        for line in self.expand_header_lines(REVISION_HEADER_TEMPLATE):
+    def generate_email_header(self, **extra_values):
+        for line in self.expand_header_lines(
+            REVISION_HEADER_TEMPLATE, **extra_values
+            ):
             yield line
 
     def generate_email_intro(self):
@@ -888,9 +902,12 @@ class ReferenceChange(Change):
             }[self.change_type]
         return self.expand(template)
 
-    def generate_email_header(self):
+    def generate_email_header(self, **extra_values):
+        if 'subject' not in extra_values:
+            extra_values['subject'] = self.get_subject()
+
         for line in self.expand_header_lines(
-            REFCHANGE_HEADER_TEMPLATE, subject=self.get_subject(),
+            REFCHANGE_HEADER_TEMPLATE, **extra_values
             ):
             yield line
 
@@ -1326,7 +1343,7 @@ class Mailer(object):
 
 
 class SendMailer(Mailer):
-    """Send emails using 'sendmail -t'."""
+    """Send emails using 'sendmail -oi -t'."""
 
     SENDMAIL_CANDIDATES = [
         '/usr/sbin/sendmail',
@@ -1355,7 +1372,7 @@ class SendMailer(Mailer):
         if command:
             self.command = command[:]
         else:
-            self.command = [self.find_sendmail(), '-t']
+            self.command = [self.find_sendmail(), '-oi', '-t']
 
         if envelopesender:
             self.command.extend(['-f', envelopesender])
@@ -1893,6 +1910,47 @@ class ConfigMaxlinesEnvironmentMixin(
             )
 
 
+class FQDNEnvironmentMixin(Environment):
+    """A mixin that sets the host's FQDN to its constructor argument."""
+
+    def __init__(self, fqdn, **kw):
+        super(FQDNEnvironmentMixin, self).__init__(**kw)
+        self.COMPUTED_KEYS += ['fqdn']
+        self.__fqdn = fqdn
+
+    def get_fqdn(self):
+        """Return the fully-qualified domain name for this host.
+
+        Return None if it is unavailable or unwanted."""
+
+        return self.__fqdn
+
+
+class ConfigFQDNEnvironmentMixin(
+    ConfigEnvironmentMixin,
+    FQDNEnvironmentMixin,
+    ):
+    """Read the FQDN from the config."""
+
+    def __init__(self, config, **kw):
+        fqdn = config.get('fqdn')
+        super(ConfigFQDNEnvironmentMixin, self).__init__(
+            config=config,
+            fqdn=fqdn,
+            **kw
+            )
+
+
+class ComputeFQDNEnvironmentMixin(FQDNEnvironmentMixin):
+    """Get the FQDN by calling socket.getfqdn()."""
+
+    def __init__(self, **kw):
+        super(ComputeFQDNEnvironmentMixin, self).__init__(
+            fqdn=socket.getfqdn(),
+            **kw
+            )
+
+
 class PusherDomainEnvironmentMixin(ConfigEnvironmentMixin):
     """Deduce pusher_email from pusher by appending an emaildomain."""
 
@@ -1925,6 +1983,10 @@ class StaticRecipientsEnvironmentMixin(Environment):
         # actual *contents* of the change being reported, we only
         # choose based on the *type* of the change.  Therefore we can
         # compute them once and for all:
+        if not (refchange_recipients
+                or announce_recipients
+                or revision_recipients):
+            raise ConfigurationException('No email recipients configured!')
         self.__refchange_recipients = refchange_recipients
         self.__announce_recipients = announce_recipients
         self.__revision_recipients = revision_recipients
@@ -1975,17 +2037,8 @@ class ConfigRecipientsEnvironmentMixin(
             retval = config.get_recipients(name)
             if retval is not None:
                 return retval
-        if len(names) == 1:
-            hint = 'Please set "%s.%s"' % (config.section, name)
         else:
-            hint = (
-                'Please set one of the following:\n    "%s"'
-                % ('"\n    "'.join('%s.%s' % (config.section, name) for name in names))
-                )
-
-        raise ConfigurationException(
-            'The list of recipients for %s is not configured.\n%s' % (names[0], hint)
-            )
+            return ''
 
 
 class ProjectdescEnvironmentMixin(Environment):
@@ -2020,6 +2073,7 @@ class GenericEnvironmentMixin(Environment):
 class GenericEnvironment(
     ProjectdescEnvironmentMixin,
     ConfigMaxlinesEnvironmentMixin,
+    ComputeFQDNEnvironmentMixin,
     ConfigFilterLinesEnvironmentMixin,
     ConfigRecipientsEnvironmentMixin,
     PusherDomainEnvironmentMixin,
@@ -2044,9 +2098,27 @@ class GitoliteEnvironmentMixin(Environment):
         return self.osenv.get('GL_USER', 'unknown user')
 
 
+class IncrementalDateTime():
+    """Simple wrapper to give incremental date/times.
+
+    Each call will result in a date/time a second later than the
+    previous call.  This can be used to falsify email headers, to
+    increase the likelihood that email clients sort the emails
+    correctly."""
+
+    def __init__(self):
+        self.time = time.time()
+
+    def next(self):
+        formatted = formatdate(self.time, True)
+        self.time += 1
+        return formatted
+
+
 class GitoliteEnvironment(
     ProjectdescEnvironmentMixin,
     ConfigMaxlinesEnvironmentMixin,
+    ComputeFQDNEnvironmentMixin,
     ConfigFilterLinesEnvironmentMixin,
     ConfigRecipientsEnvironmentMixin,
     PusherDomainEnvironmentMixin,
@@ -2251,6 +2323,7 @@ class Push(object):
         # guarantee that one (and only one) email is generated for
         # each new commit.
         unhandled_sha1s = set(self.get_new_commits())
+        send_date = IncrementalDateTime()
         for change in self.changes:
             # Check if we've got anyone to send to
             if not change.recipients:
@@ -2261,7 +2334,11 @@ class Push(object):
                     )
             else:
                 sys.stderr.write('Sending notification emails to: %s\n' % (change.recipients,))
-                mailer.send(change.generate_email(self, body_filter), change.recipients)
+                extra_values = {'send_date' : send_date.next()}
+                mailer.send(
+                    change.generate_email(self, body_filter, extra_values),
+                    change.recipients,
+                    )
 
             sha1s = []
             for sha1 in reversed(list(self.get_new_commits(change))):
@@ -2281,7 +2358,11 @@ class Push(object):
             for (num, sha1) in enumerate(sha1s):
                 rev = Revision(change, GitObject(sha1), num=num+1, tot=len(sha1s))
                 if rev.recipients:
-                    mailer.send(rev.generate_email(self, body_filter), rev.recipients)
+                    extra_values = {'send_date' : send_date.next()}
+                    mailer.send(
+                        rev.generate_email(self, body_filter, extra_values),
+                        rev.recipients,
+                        )
 
         # Consistency check:
         if unhandled_sha1s:
@@ -2352,6 +2433,7 @@ def choose_environment(config, osenv=None, env=None, recipients=None):
     environment_mixins = [
         ProjectdescEnvironmentMixin,
         ConfigMaxlinesEnvironmentMixin,
+        ComputeFQDNEnvironmentMixin,
         ConfigFilterLinesEnvironmentMixin,
         PusherDomainEnvironmentMixin,
         ConfigOptionsEnvironmentMixin,
