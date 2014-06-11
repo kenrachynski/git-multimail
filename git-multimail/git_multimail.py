@@ -1,6 +1,6 @@
 #! /usr/bin/env python2
 
-# Copyright (c) 2012,2013 Michael Haggerty
+# Copyright (c) 2012-2014 Michael Haggerty and others
 # Derived from contrib/hooks/post-receive-email, which is
 # Copyright (c) 2007 Andy Parkins
 # and also includes contributions by other authors.
@@ -388,9 +388,9 @@ class Config(object):
     def get(self, name, default=None):
         try:
             values = self._split(read_git_output(
-                    ['config', '--get', '--null', '%s.%s' % (self.section, name)],
-                    env=self.env, keepends=True,
-                    ))
+                ['config', '--get', '--null', '%s.%s' % (self.section, name)],
+                env=self.env, keepends=True,
+                ))
             assert len(values) == 1
             return values[0]
         except CommandError:
@@ -449,8 +449,13 @@ class Config(object):
             env=self.env,
             )
 
-    def has_key(self, name):
+    def __contains__(self, name):
         return self.get_all(name, default=None) is not None
+
+    # We don't use this method anymore internally, but keep it here in
+    # case somebody is calling it from their own code:
+    def has_key(self, name):
+        return name in self
 
     def unset_all(self, name):
         try:
@@ -579,7 +584,7 @@ class Change(object):
         self._values = None
 
     def _compute_values(self):
-        """Return a dictionary {keyword : expansion} for this Change.
+        """Return a dictionary {keyword: expansion} for this Change.
 
         Derived classes overload this method to add more entries to
         the return value.  This method is used internally by
@@ -589,7 +594,7 @@ class Change(object):
         return self.environment.get_values()
 
     def get_values(self, **extra_values):
-        """Return a dictionary {keyword : expansion} for this Change.
+        """Return a dictionary {keyword: expansion} for this Change.
 
         Return a dictionary mapping keywords to the values that they
         should be expanded to for this Change (used when interpolating
@@ -750,8 +755,8 @@ class Revision(Change):
 
     def generate_email_header(self, **extra_values):
         for line in self.expand_header_lines(
-            REVISION_HEADER_TEMPLATE, **extra_values
-            ):
+                REVISION_HEADER_TEMPLATE, **extra_values
+                ):
             yield line
 
     def generate_email_intro(self):
@@ -825,7 +830,7 @@ class ReferenceChange(Change):
                 sys.stderr.write(
                     '*** Push-update of tracking branch %r\n'
                     '***  - incomplete email generated.\n'
-                     % (refname,)
+                    % (refname,)
                     )
                 klass = OtherReferenceChange
             else:
@@ -833,7 +838,7 @@ class ReferenceChange(Change):
                 sys.stderr.write(
                     '*** Push-update of strange reference %r\n'
                     '***  - incomplete email generated.\n'
-                     % (refname,)
+                    % (refname,)
                     )
                 klass = OtherReferenceChange
         else:
@@ -841,7 +846,7 @@ class ReferenceChange(Change):
             sys.stderr.write(
                 '*** Unknown type of update to %r (%s)\n'
                 '***  - incomplete email generated.\n'
-                 % (refname, rev.type,)
+                % (refname, rev.type,)
                 )
             klass = OtherReferenceChange
 
@@ -854,9 +859,9 @@ class ReferenceChange(Change):
     def __init__(self, environment, refname, short_refname, old, new, rev):
         Change.__init__(self, environment)
         self.change_type = {
-            (False, True) : 'create',
-            (True, True) : 'update',
-            (True, False) : 'delete',
+            (False, True): 'create',
+            (True, True): 'update',
+            (True, False): 'delete',
             }[bool(old), bool(new)]
         self.refname = refname
         self.short_refname = short_refname
@@ -896,9 +901,9 @@ class ReferenceChange(Change):
 
     def get_subject(self):
         template = {
-            'create' : REF_CREATED_SUBJECT_TEMPLATE,
-            'update' : REF_UPDATED_SUBJECT_TEMPLATE,
-            'delete' : REF_DELETED_SUBJECT_TEMPLATE,
+            'create': REF_CREATED_SUBJECT_TEMPLATE,
+            'update': REF_UPDATED_SUBJECT_TEMPLATE,
+            'delete': REF_DELETED_SUBJECT_TEMPLATE,
             }[self.change_type]
         return self.expand(template)
 
@@ -907,8 +912,8 @@ class ReferenceChange(Change):
             extra_values['subject'] = self.get_subject()
 
         for line in self.expand_header_lines(
-            REFCHANGE_HEADER_TEMPLATE, **extra_values
-            ):
+                REFCHANGE_HEADER_TEMPLATE, **extra_values
+                ):
             yield line
 
     def generate_email_intro(self):
@@ -922,9 +927,9 @@ class ReferenceChange(Change):
         generate_update_summary() / generate_delete_summary()."""
 
         change_summary = {
-            'create' : self.generate_create_summary,
-            'delete' : self.generate_delete_summary,
-            'update' : self.generate_update_summary,
+            'create': self.generate_create_summary,
+            'delete': self.generate_delete_summary,
+            'update': self.generate_update_summary,
             }[self.change_type](push)
         for line in change_summary:
             yield line
@@ -945,7 +950,7 @@ class ReferenceChange(Change):
                     + new_commits_list
                     + ['--'],
                     keepends=True,
-                ):
+                    ):
                 yield line
 
     def generate_revision_change_summary(self, push):
@@ -960,7 +965,7 @@ class ReferenceChange(Change):
             sha1s.reverse()
             tot = len(sha1s)
             new_revisions = [
-                Revision(self, GitObject(sha1), num=i+1, tot=tot)
+                Revision(self, GitObject(sha1), num=i + 1, tot=tot)
                 for (i, sha1) in enumerate(sha1s)
                 ]
 
@@ -993,16 +998,16 @@ class ReferenceChange(Change):
             # revisions in the summary even though we will not send
             # new notification emails for them.
             adds = list(generate_summaries(
-                    '--topo-order', '--reverse', '%s..%s'
-                    % (self.old.commit_sha1, self.new.commit_sha1,)
-                    ))
+                '--topo-order', '--reverse', '%s..%s'
+                % (self.old.commit_sha1, self.new.commit_sha1,)
+                ))
 
             # List of the revisions that were removed from the branch
             # by this update.  This will be empty except for
             # non-fast-forward updates.
             discards = list(generate_summaries(
-                    '%s..%s' % (self.new.commit_sha1, self.old.commit_sha1,)
-                    ))
+                '%s..%s' % (self.new.commit_sha1, self.old.commit_sha1,)
+                ))
 
             if adds:
                 new_commits_list = push.get_new_commits(self)
@@ -1089,11 +1094,11 @@ class ReferenceChange(Change):
             yield '\n'
             yield 'Summary of changes:\n'
             for line in read_git_lines(
-                ['diff-tree']
-                + self.diffopts
-                + ['%s..%s' % (self.old.commit_sha1, self.new.commit_sha1,)],
-                keepends=True,
-                ):
+                    ['diff-tree']
+                    + self.diffopts
+                    + ['%s..%s' % (self.old.commit_sha1, self.new.commit_sha1,)],
+                    keepends=True,
+                    ):
                 yield line
 
         elif self.old.commit_sha1 and not self.new.commit_sha1:
@@ -1103,7 +1108,7 @@ class ReferenceChange(Change):
             sha1s = list(push.get_discarded_commits(self))
             tot = len(sha1s)
             discarded_revisions = [
-                Revision(self, GitObject(sha1), num=i+1, tot=tot)
+                Revision(self, GitObject(sha1), num=i + 1, tot=tot)
                 for (i, sha1) in enumerate(sha1s)
                 ]
 
@@ -1631,7 +1636,7 @@ class Environment(object):
         return CHARSET
 
     def get_values(self):
-        """Return a dictionary {keyword : expansion} for this Environment.
+        """Return a dictionary {keyword: expansion} for this Environment.
 
         This method is called by Change._compute_values().  The keys
         in the returned dictionary are available to be used in any of
@@ -1756,9 +1761,9 @@ class ConfigOptionsEnvironmentMixin(ConfigEnvironmentMixin):
         reply_to = config.get('replyTo')
         self.__reply_to_refchange = config.get('replyToRefchange', default=reply_to)
         if (
-            self.__reply_to_refchange is not None
-            and self.__reply_to_refchange.lower() == 'author'
-            ):
+                self.__reply_to_refchange is not None
+                and self.__reply_to_refchange.lower() == 'author'
+                ):
             raise ConfigurationException(
                 '"author" is not an allowed setting for replyToRefchange'
                 )
@@ -1779,8 +1784,12 @@ class ConfigOptionsEnvironmentMixin(ConfigEnvironmentMixin):
 
     def get_emailprefix(self):
         emailprefix = self.config.get('emailprefix')
-        if emailprefix and emailprefix.strip():
-            return emailprefix.strip() + ' '
+        if emailprefix is not None:
+            emailprefix = emailprefix.strip()
+            if emailprefix:
+                return emailprefix + ' '
+            else:
+                return ''
         else:
             return '[%s] ' % (self.get_repo_shortname(),)
 
@@ -1862,9 +1871,9 @@ class FilterLinesEnvironmentMixin(Environment):
 
 
 class ConfigFilterLinesEnvironmentMixin(
-    ConfigEnvironmentMixin,
-    FilterLinesEnvironmentMixin,
-    ):
+        ConfigEnvironmentMixin,
+        FilterLinesEnvironmentMixin,
+        ):
     """Handle encoding and maximum line length based on config."""
 
     def __init__(self, config, **kw):
@@ -1896,9 +1905,9 @@ class MaxlinesEnvironmentMixin(Environment):
 
 
 class ConfigMaxlinesEnvironmentMixin(
-    ConfigEnvironmentMixin,
-    MaxlinesEnvironmentMixin,
-    ):
+        ConfigEnvironmentMixin,
+        MaxlinesEnvironmentMixin,
+        ):
     """Limit the email body to the number of lines specified in config."""
 
     def __init__(self, config, **kw):
@@ -1927,9 +1936,9 @@ class FQDNEnvironmentMixin(Environment):
 
 
 class ConfigFQDNEnvironmentMixin(
-    ConfigEnvironmentMixin,
-    FQDNEnvironmentMixin,
-    ):
+        ConfigEnvironmentMixin,
+        FQDNEnvironmentMixin,
+        ):
     """Read the FQDN from the config."""
 
     def __init__(self, config, **kw):
@@ -1970,10 +1979,10 @@ class StaticRecipientsEnvironmentMixin(Environment):
     """Set recipients statically based on constructor parameters."""
 
     def __init__(
-        self,
-        refchange_recipients, announce_recipients, revision_recipients,
-        **kw
-        ):
+            self,
+            refchange_recipients, announce_recipients, revision_recipients,
+            **kw
+            ):
         super(StaticRecipientsEnvironmentMixin, self).__init__(**kw)
 
         # The recipients for various types of notification emails, as
@@ -2002,9 +2011,9 @@ class StaticRecipientsEnvironmentMixin(Environment):
 
 
 class ConfigRecipientsEnvironmentMixin(
-    ConfigEnvironmentMixin,
-    StaticRecipientsEnvironmentMixin
-    ):
+        ConfigEnvironmentMixin,
+        StaticRecipientsEnvironmentMixin
+        ):
     """Determine recipients statically based on config."""
 
     def __init__(self, config, **kw):
@@ -2071,16 +2080,16 @@ class GenericEnvironmentMixin(Environment):
 
 
 class GenericEnvironment(
-    ProjectdescEnvironmentMixin,
-    ConfigMaxlinesEnvironmentMixin,
-    ComputeFQDNEnvironmentMixin,
-    ConfigFilterLinesEnvironmentMixin,
-    ConfigRecipientsEnvironmentMixin,
-    PusherDomainEnvironmentMixin,
-    ConfigOptionsEnvironmentMixin,
-    GenericEnvironmentMixin,
-    Environment,
-    ):
+        ProjectdescEnvironmentMixin,
+        ConfigMaxlinesEnvironmentMixin,
+        ComputeFQDNEnvironmentMixin,
+        ConfigFilterLinesEnvironmentMixin,
+        ConfigRecipientsEnvironmentMixin,
+        PusherDomainEnvironmentMixin,
+        ConfigOptionsEnvironmentMixin,
+        GenericEnvironmentMixin,
+        Environment,
+        ):
     pass
 
 
@@ -2098,7 +2107,7 @@ class GitoliteEnvironmentMixin(Environment):
         return self.osenv.get('GL_USER', 'unknown user')
 
 
-class IncrementalDateTime():
+class IncrementalDateTime(object):
     """Simple wrapper to give incremental date/times.
 
     Each call will result in a date/time a second later than the
@@ -2116,16 +2125,16 @@ class IncrementalDateTime():
 
 
 class GitoliteEnvironment(
-    ProjectdescEnvironmentMixin,
-    ConfigMaxlinesEnvironmentMixin,
-    ComputeFQDNEnvironmentMixin,
-    ConfigFilterLinesEnvironmentMixin,
-    ConfigRecipientsEnvironmentMixin,
-    PusherDomainEnvironmentMixin,
-    ConfigOptionsEnvironmentMixin,
-    GitoliteEnvironmentMixin,
-    Environment,
-    ):
+        ProjectdescEnvironmentMixin,
+        ConfigMaxlinesEnvironmentMixin,
+        ComputeFQDNEnvironmentMixin,
+        ConfigFilterLinesEnvironmentMixin,
+        ConfigRecipientsEnvironmentMixin,
+        PusherDomainEnvironmentMixin,
+        ConfigOptionsEnvironmentMixin,
+        GitoliteEnvironmentMixin,
+        Environment,
+        ):
     pass
 
 
@@ -2187,7 +2196,7 @@ class Push(object):
     possible and working with SHA1s thereafter (because SHA1s are
     immutable)."""
 
-    # A map {(changeclass, changetype) : integer} specifying the order
+    # A map {(changeclass, changetype): integer} specifying the order
     # that reference changes will be processed if multiple reference
     # changes are included in a single push.  The order is significant
     # mostly because new commit notifications are threaded together
@@ -2334,7 +2343,7 @@ class Push(object):
                     )
             else:
                 sys.stderr.write('Sending notification emails to: %s\n' % (change.recipients,))
-                extra_values = {'send_date' : send_date.next()}
+                extra_values = {'send_date': send_date.next()}
                 mailer.send(
                     change.generate_email(self, body_filter, extra_values),
                     change.recipients,
@@ -2356,9 +2365,9 @@ class Push(object):
                 return
 
             for (num, sha1) in enumerate(sha1s):
-                rev = Revision(change, GitObject(sha1), num=num+1, tot=len(sha1s))
+                rev = Revision(change, GitObject(sha1), num=num + 1, tot=len(sha1s))
                 if rev.recipients:
-                    extra_values = {'send_date' : send_date.next()}
+                    extra_values = {'send_date': send_date.next()}
                     mailer.send(
                         rev.generate_email(self, body_filter, extra_values),
                         rev.recipients,
@@ -2421,8 +2430,8 @@ def choose_mailer(config, environment):
 
 
 KNOWN_ENVIRONMENTS = {
-    'generic' : GenericEnvironmentMixin,
-    'gitolite' : GitoliteEnvironmentMixin,
+    'generic': GenericEnvironmentMixin,
+    'gitolite': GitoliteEnvironmentMixin,
     }
 
 
@@ -2439,8 +2448,8 @@ def choose_environment(config, osenv=None, env=None, recipients=None):
         ConfigOptionsEnvironmentMixin,
         ]
     environment_kw = {
-        'osenv' : osenv,
-        'config' : config,
+        'osenv': osenv,
+        'config': config,
         }
 
     if not env:
@@ -2513,8 +2522,8 @@ def main(args):
 
         if options.show_env:
             sys.stderr.write('Environment values:\n')
-            for (k,v) in sorted(environment.get_values().items()):
-                sys.stderr.write('    %s : %r\n' % (k,v))
+            for (k, v) in sorted(environment.get_values().items()):
+                sys.stderr.write('    %s : %r\n' % (k, v))
             sys.stderr.write('\n')
 
         if options.stdout:
@@ -2537,4 +2546,3 @@ def main(args):
 
 if __name__ == '__main__':
     main(sys.argv[1:])
-

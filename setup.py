@@ -5,7 +5,7 @@ import os
 from setuptools import setup
 
 assert 0x02040000 <= sys.hexversion < 0x03000000, \
-       "Install Python 2, version 2.4 or greater"
+    "Install Python 2, version 2.4 or greater"
 
 
 def read_readme():
@@ -14,11 +14,11 @@ def read_readme():
 
 setup(
     name='git-multimail',
-    version='0.9.0',
+    version='1.0.0',
     description='Send notification emails for Git pushes',
     long_description=read_readme(),
     classifiers=[
-        'Development Status :: 4 - Beta',
+        'Development Status :: 5 - Production/Stable',
         'Environment :: No Input/Output (Daemon)',
         'Intended Audience :: Developers',
         'Intended Audience :: System Administrators',
@@ -35,8 +35,6 @@ setup(
     maintainer='Michael Haggerty',
     maintainer_email='mhagger@alum.mit.edu',
     license='GPLv2',
-    package_dir = {'': 'git-multimail'},
+    package_dir={'': 'git-multimail'},
     py_modules=['git_multimail'],
     )
-
-
