@@ -4,7 +4,7 @@ ZEROS=0000000000000000000000000000000000000000
 
 D=$(cd $(dirname "$0") && pwd)
 MULTIMAIL="$D/../git-multimail/git_multimail.py"
-POST_RECEIVE="$D/../git-multimail/post-receive"
+POST_RECEIVE="$D/../git-multimail/post-receive.example"
 
 TESTREPO=$("$D/create-test-repo")
 
@@ -75,6 +75,14 @@ test_rewind refs/heads/master refs/heads/feature
 test_rewind refs/heads/master refs/heads/master^
 
 test_update refs/heads/release refs/heads/release^^^^
+
+# Should send both summary and revision email:
+test_update refs/heads/release refs/heads/release^
+# Should send a combined email:
+git config multimailhook.refchangelist 'Commit List <commitlist@example.com>'
+test_update refs/heads/release refs/heads/release^
+git config multimailhook.refchangelist 'Refchange List <refchangelist@example.com>'
+
 test_rewind refs/heads/release refs/heads/release^^
 
 test_create refs/heads/feature
@@ -111,6 +119,14 @@ test_update refs/foo/bar refs/heads/master
 test_delete refs/foo/bar
 
 test_hook refs/heads/master refs/heads/master^^
+
+git config multimailhook.scanCommitForCc true
+test_update refs/heads/formatting refs/heads/formatting^^^
+
+for o in mailinglist refchangelist announcelist commitlist; do
+    git config multimailhook.$o ''
+done
+test_update refs/heads/formatting refs/heads/formatting^^^
 
 rm -rf "$TESTREPO"
 

@@ -146,11 +146,17 @@ multimailhook.environment
     This describes the general environment of the repository.
     Currently supported values:
 
-    "generic" -- the username of the pusher is read from $USER and the
-        repository name is derived from the repository's path.
+    "generic" -- the username of the pusher is read from $USER or
+        $USERNAME and the repository name is derived from the
+        repository's path.
 
-    "gitolite" -- the username of the pusher is read from $GL_USER and
-        the repository name from $GL_REPO.
+    "gitolite" -- the username of the pusher is read from $GL_USER,
+        the repository name is read from $GL_REPO, and the From:
+        header value is optionally read from gitolite.conf (see
+        multimailhook.from).
+
+        For more information about gitolite and git-multimail, read
+        doc/gitolite.rst
 
     If neither of these environments is suitable for your setup, then
     you can implement a Python class that inherits from Environment
@@ -263,17 +269,54 @@ multimailhook.mailer
            "mail.example.com:25".  Default is 'localhost' using port
            25.
 
+       multimailhook.smtpUser
+       multimailhook.smtpPass
+
+           Server username and password. Required if smtpEncryption is 'ssl'.
+           Note that the username and password currently need to be
+           set cleartext in the configuration file, which is not
+           recommended. If you need to use this option, be sure your
+           configuration file is read-only.
+
        multimailhook.envelopeSender
 
            The sender address to be passed to the SMTP server.  If
            unset, then the value of multimailhook.from is used.
 
+       multimailhook.smtpServerTimeout
+
+           Timeout in seconds.
+
+       multimailhook.smtpEncryption
+
+           Set the security type. Allowed values: none, ssl.
+           Default=none.
+
+       multimailhook.smtpServerDebugLevel
+
+           Integer number. Set to greater than 0 to activate debugging.
+
 multimailhook.from
 
-    If set then use this value in the From: field of generated emails.
-    If unset, then use the repository's user configuration (user.name
-    and user.email).  If user.email is also unset, then use
-    multimailhook.envelopeSender.
+    If set, use this value in the From: field of generated emails.  If
+    unset, the value of the From: header is determined as follows:
+
+    1. (gitolite environment only) Parse gitolite.conf, looking for a
+       block of comments that looks like this:
+
+           # BEGIN USER EMAILS
+           # username Firstname Lastname <email@example.com>
+           # END USER EMAILS
+
+       If that block exists, and there is a line between the BEGIN
+       USER EMAILS and END USER EMAILS lines where the first field
+       matches the gitolite username ($GL_USER), use the rest of the
+       line for the From: header.
+
+    2. If the user.email configuration setting is set, use its value
+       (and the value of user.name, if set).
+
+    3. Use the value of multimailhook.envelopeSender.
 
 multimailhook.administrator
 
@@ -389,6 +432,28 @@ multimailhook.replyToRefchange
     - The value "none", in which case the Reply-To: field will be
       omitted.
 
+multimailhook.quiet
+
+    Do not output the list of email recipients from the hook
+
+multimailhook.stdout
+
+    For debugging, send emails to stdout rather than to the
+    mailer.  Equivalent to the --stdout command line option
+
+multimailhook.scanCommitForCc
+
+    If this option is set to true, than recipients from lines in commit body
+    that starts with "CC:" will be added to CC list.
+    Default: false
+
+multimailhook.combineWhenSingleCommit
+
+    If this option is set to true and a single new commit is pushed to
+    a branch, combine the summary and commit email messages into a
+    single email.
+    Default: true
+
 
 Email filtering aids
 --------------------
@@ -422,9 +487,10 @@ environment are built in:
 
 * GitoliteEnvironment: a Git repository that is managed by gitolite
   [3].  For such repositories, the identity of the pusher is read from
-  environment variable $GL_USER, and the name of the repository is
-  read from $GL_REPO (if it is not overridden by
-  multimailhook.reponame).
+  environment variable $GL_USER, the name of the repository is read
+  from $GL_REPO (if it is not overridden by multimailhook.reponame),
+  and the From: header value is optionally read from gitolite.conf
+  (see multimailhook.from).
 
 By default, git-multimail assumes GitoliteEnvironment if $GL_USER and
 $GL_REPO are set, and otherwise assumes GenericEnvironment.
@@ -457,34 +523,35 @@ consider sharing them with the community!
 Getting involved
 ----------------
 
-git-multimail is an open-source project, built by volunteers.  We
-would welcome your help!
+git-multimail is an open-source project, built by volunteers. We would
+welcome your help!
 
-The current maintainer is Michael Haggerty <mhagger@alum.mit.edu>.
+The current maintainers are Michael Haggerty <mhagger@alum.mit.edu>
+and Matthieu Moy <matthieu.moy@grenoble-inp.fr>.
 
-General discussion of git-multimail takes place on the main Git
+Please note that although a copy of git-multimail is distributed in
+the "contrib" section of the main Git project, development takes place
+in a separate git-multimail repository on GitHub:
+
+    https://github.com/git-multimail/git-multimail
+
+Whenever enough changes to git-multimail have accumulated, a new
+code-drop of git-multimail will be submitted for inclusion in the Git
+project.
+
+We use the GitHub issue tracker to keep track of bugs and feature
+requests, and we use GitHub pull requests to exchange patches (though,
+if you prefer, you can send patches via the Git mailing list with CC
+to the maintainers). Please sign off your patches as per the Git
+project practice.
+
+General discussion of git-multimail can take place on the main Git
 mailing list,
 
     git@vger.kernel.org
 
-Please CC emails regarding git-multimail to me so that I don't
-overlook them.
-
-The git-multimail project itself is currently hosted on GitHub:
-
-    https://github.com/mhagger/git-multimail
-
-We use the GitHub issue tracker to keep track of bugs and feature
-requests, and GitHub pull requests to exchange patches (though, if you
-prefer, you can send patches via the Git mailing list with cc to me).
-Please sign off your patches as per the Git project practice.
-
-Please note that although a copy of git-multimail will probably be
-distributed in the "contrib" section of the main Git project,
-development takes place in the separate git-multimail repository on
-GitHub!  (Whenever enough changes to git-multimail have accumulated, a
-new code-drop of git-multimail will be submitted for inclusion in the
-Git project.)
+Please CC emails regarding git-multimail to the maintainers so that we
+don't overlook them.
 
 
 Footnotes
@@ -497,5 +564,6 @@ Footnotes
     seen does not work when it is used as an "update" script.  In
     particular, no notification email will be generated for a new
     commit that is added to multiple references in the same push.
+    A workaround is to use --force-send to force sending the emails.
 
 [3] https://github.com/sitaramc/gitolite
